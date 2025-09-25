@@ -4,7 +4,7 @@ A simple Python application to view college timetables by day.
 # Features
 View daily timetables for any course/branch
 Displays subject, teacher, period, and classroom
-User-friendly GUI with Tkinter
+User-friendly GUI with streamlit
 Timetable data stored and retrieved from PostgreSQL
 
 ## Project Structure
