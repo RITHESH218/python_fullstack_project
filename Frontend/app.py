@@ -1,75 +1,63 @@
-# app.py
-
 import sys
 import os
-
-# Add parent directory to sys.path so 'src' can be imported
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-import tkinter as tk
-from tkinter import ttk, messagebox
-from src.logic import get_timetable
-from src.db import get_connection
+import streamlit as st
 import pandas as pd
 
+# Add parent directory so 'src' can be imported
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-# --- Fetch courses dynamically from Supabase ---
-def fetch_courses():
-    query = "SELECT course_name FROM courses ORDER BY course_name;"
-    conn = get_connection()
-    try:
-        df = pd.read_sql(query, conn)
-        return df['course_name'].tolist() if not df.empty else []
-    finally:
-        conn.close()
+from src.logic import TableManager
 
+# Initialize logic manager
+table_manager = TableManager()
 
-# --- GUI Setup ---
-root = tk.Tk()
-root.title("College Timetable Viewer")
-root.geometry("650x450")
+# --- Page Config ---
+st.set_page_config(page_title="College Timetable Viewer", layout="wide")
+st.title("📅 College Timetable Viewer")
 
-# Course selection
-tk.Label(root, text="Course:").grid(row=0, column=0, padx=10, pady=10, sticky="w")
-course_var = tk.StringVar()
-course_entry = ttk.Combobox(root, textvariable=course_var)
-course_entry['values'] = fetch_courses()
-course_entry.grid(row=0, column=1, padx=10, pady=10)
+# --- Sidebar Filters ---
+st.sidebar.header("Filters")
+courses = [c["course_name"] for c in table_manager.get_all_courses()]
+selected_course = st.sidebar.selectbox("Select Course", courses)
+selected_day = st.sidebar.selectbox("Select Day", ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday"))
 
-# Day selection
-tk.Label(root, text="Day:").grid(row=1, column=0, padx=10, pady=10, sticky="w")
-day_var = tk.StringVar()
-day_entry = ttk.Combobox(root, textvariable=day_var)
-day_entry['values'] = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday")
-day_entry.grid(row=1, column=1, padx=10, pady=10)
+# --- Fetch Timetable ---
+if st.sidebar.button("Show Timetable"):
+    df = table_manager.get_timetable(selected_course, selected_day)
 
-# Text area to display timetable
-text_area = tk.Text(root, height=15, width=80)
-text_area.grid(row=3, column=0, columnspan=3, padx=10, pady=10)
-
-
-# --- Functions ---
-def show_timetable():
-    text_area.delete(1.0, tk.END)
-    course_name = course_var.get()
-    day = day_var.get()
-
-    if not course_name or not day:
-        messagebox.showwarning("Input Error", "Please select both course and day.")
-        return
-
-    df, error = get_timetable(course_name, day)
-    if error:
-        text_area.insert(tk.END, f"{error}\n")
+    if df.empty:
+        st.warning("No timetable found for this course and day.")
     else:
-        for idx, row in df.iterrows():
-            line = f"Period {row['period']}: {row['subject']} - {row['teacher']} (Class: {row['classroom']})\n"
-            text_area.insert(tk.END, line)
+        # Format DataFrame for display
+        df_display = df[["period", "subject_name", "teacher_name", "classroom"]]
+        df_display = df_display.rename(columns={
+            "period": "Period",
+            "subject_name": "Subject",
+            "teacher_name": "Teacher",
+            "classroom": "Classroom"
+        })
+        st.table(df_display)
 
+# --- Optional: Add/Edit/Delete section ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("Manage Timetable")
+action = st.sidebar.selectbox("Action", ["Add Entry", "Update Entry", "Delete Entry"])
 
-# Button
-show_btn = tk.Button(root, text="Show Timetable", command=show_timetable)
-show_btn.grid(row=2, column=0, columnspan=2, pady=10)
+if action != "Show Timetable":
+    st.sidebar.write("Fill in the details below:")
+    day = st.sidebar.selectbox("Day", ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday"))
+    period = st.sidebar.number_input("Period", min_value=1, max_value=10, step=1)
+    subject = st.sidebar.text_input("Subject Name")
+    teacher = st.sidebar.text_input("Teacher Name")
+    classroom = st.sidebar.text_input("Classroom")
 
-# Run GUI
-root.mainloop()
+    if st.sidebar.button(action):
+        if action == "Add Entry":
+            table_manager.add_timetable_entry(selected_course, day, period, subject, teacher, classroom)
+            st.success("Timetable entry added successfully!")
+        elif action == "Update Entry":
+            table_manager.update_timetable_entry(selected_course, day, period, subject, teacher, classroom)
+            st.success("Timetable entry updated successfully!")
+        elif action == "Delete Entry":
+            table_manager.delete_timetable_entry(selected_course, day, period)
+            st.success("Timetable entry deleted successfully!")
