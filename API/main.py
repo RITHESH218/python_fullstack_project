@@ -1,30 +1,31 @@
-# frontend --> API --> logic --> db --> response
+import sys
+import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-import sys, os
 from pydantic import BaseModel
+from functools import wraps
 
 # --- Import TableManager from src ---
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.logic import TableManager
 
-# ------- App setup --------------------
+# --- App Setup ---
 app = FastAPI(
     title="Timetable API",
     description="API for managing course timetables",
     version="1.0.0"
 )
 
-# ------------- Allow Frontend to access API ----------------
+# --- Allow Frontend to Access API ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # ✅ Corrected
+    allow_origins=["*"],  # Change to frontend URL in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Creating an instance of TableManager
+# --- Initialize TableManager ---
 table_manager = TableManager()
 
 # ----------------- DATA MODELS -------------------
@@ -40,7 +41,7 @@ class TimetableEntry(BaseModel):
     classroom: str
 
 class UpdateTimetableEntry(TimetableEntry):
-    pass  # Same fields as TimetableEntry
+    pass
 
 class DeleteTimetable(BaseModel):
     course_name: str
@@ -55,94 +56,72 @@ class ResponseModel(BaseModel):
     message: str
     data: dict | list | None
 
+# ----------------- HELPER DECORATOR -------------------
+def handle_exceptions(func):
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        try:
+            return await func(*args, **kwargs) if callable(func) else func(*args, **kwargs)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    return wrapper
+
 # ----------------- ENDPOINTS -------------------
 
 @app.post("/add_course", response_model=ResponseModel)
+@handle_exceptions
 async def add_course(course: Course):
-    """Add a new course."""
-    try:
-        result = table_manager.add_course(course.course_name)
-        return {"message": "Course added successfully", "data": result}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    result = table_manager.add_course(course.course_name)
+    return {"message": "Course added successfully", "data": result}
 
 
 @app.post("/add_timetable_entry", response_model=ResponseModel)
+@handle_exceptions
 async def add_timetable_entry(entry: TimetableEntry):
-    """Add a new timetable entry."""
-    try:
-        result = table_manager.add_timetable_entry(
-            entry.course_name, 
-            entry.day, 
-            entry.period, 
-            entry.subject_name, 
-            entry.teacher_name, 
-            entry.classroom
-        )
-        return {"message": "Timetable entry added successfully", "data": result}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    result = table_manager.add_timetable_entry(
+        entry.course_name, entry.day, entry.period,
+        entry.subject_name, entry.teacher_name, entry.classroom
+    )
+    return {"message": "Timetable entry added successfully", "data": result}
 
 
 @app.post("/update_timetable_entry", response_model=ResponseModel)
+@handle_exceptions
 async def update_timetable_entry(entry: UpdateTimetableEntry):
-    """Update an existing timetable entry."""
-    try:
-        result = table_manager.update_timetable_entry(
-            entry.course_name, 
-            entry.day, 
-            entry.period, 
-            entry.subject_name, 
-            entry.teacher_name, 
-            entry.classroom
-        )
-        return {"message": "Timetable entry updated successfully", "data": result}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    result = table_manager.update_timetable_entry(
+        entry.course_name, entry.day, entry.period,
+        entry.subject_name, entry.teacher_name, entry.classroom
+    )
+    return {"message": "Timetable entry updated successfully", "data": result}
 
 
 @app.post("/delete_timetable", response_model=ResponseModel)
+@handle_exceptions
 async def delete_timetable(entry: DeleteTimetable):
-    """Delete a timetable entry by course, day, and period."""
-    try:
-        result = table_manager.delete_timetable(
-            entry.course_name, 
-            entry.day, 
-            entry.period
-        )
-        return {"message": "Timetable entry deleted successfully", "data": result}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    result = table_manager.delete_timetable_entry(entry.course_name, entry.day, entry.period)
+    return {"message": "Timetable entry deleted successfully", "data": result}
 
 
-@app.post("/get_all_courses", response_model=ResponseModel)
+@app.get("/get_all_courses", response_model=ResponseModel)
+@handle_exceptions
 async def get_all_courses():
-    """Get all courses."""
-    try:
-        result = table_manager.get_all_courses()
-        return {"message": "Courses retrieved successfully", "data": result}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    result = table_manager.get_all_courses()
+    return {"message": "Courses retrieved successfully", "data": result}
 
 
 @app.post("/get_timetable", response_model=ResponseModel)
+@handle_exceptions
 async def get_timetable(entry: GetTimetable):
-    """Get timetable for a specific course and day."""
-    try:
-        result = table_manager.get_timetable(entry.course_name, entry.day)
-        return {"message": "Timetable retrieved successfully", "data": result}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    df = table_manager.get_timetable(entry.course_name, entry.day)
+    data = df.to_dict(orient="records") if not df.empty else []
+    return {"message": "Timetable retrieved successfully", "data": data}
 
 
-@app.post("/get_all_timetables", response_model=ResponseModel)
+@app.get("/get_all_timetables", response_model=ResponseModel)
+@handle_exceptions
 async def get_all_timetables():
-    """Get all timetables."""
-    try:
-        result = table_manager.get_all_timetables()
-        return {"message": "All timetables retrieved successfully", "data": result}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    timetables = table_manager.get_all_timetables()
+    return {"message": "All timetables retrieved successfully", "data": timetables}
 
 
 @app.get("/", response_model=dict)
@@ -151,7 +130,7 @@ async def root():
     return {"message": "Welcome to the Timetable API. Use the endpoints to manage courses and timetables."}
 
 
-# Run the FastAPI app using uvicorn
+# --- Run App ---
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

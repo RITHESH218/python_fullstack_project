@@ -1,37 +1,48 @@
-# src/logic.py
-
-from src.db import get_course_id, fetch_timetable_from_db
 import pandas as pd
+from src.db import DatabaseManager
 
-def get_timetable(course_name, day):
-    """
-    Fetch timetable for a course name and day.
-    Returns a DataFrame and an error message (None if successful).
-    """
-    try:
-        course_id = get_course_id(course_name)
+
+class TableManager:
+    def __init__(self):
+        self.db = DatabaseManager()
+
+    def get_timetable(self, course_name: str, day: str):
+        """Fetch timetable for a given course and day as a DataFrame."""
+        course_id = self.db.get_course_id_value(course_name)
         if not course_id:
-            return None, f"Course '{course_name}' not found"
+            return pd.DataFrame()  # empty if course not found
 
-        df = fetch_timetable_from_db(course_id, day)
+        timetable_data = self.db.fetch_timetable(course_id, day)
+        df = pd.DataFrame(timetable_data)
+
         if df.empty:
-            return df, f"No timetable found for {course_name} on {day}"
+            return df
 
-        df = df.sort_values(by="period").reset_index(drop=True)
-        return df, None
+        return df.sort_values(by="period").reset_index(drop=True)
 
-    except Exception as e:
-        return None, f"Error fetching timetable: {e}"
+    def add_course(self, course_name: str):
+        return self.db.add_course(course_name)
 
+    def add_timetable_entry(self, course_name: str, day: str, period: int, subject_name: str, teacher_name: str, classroom: str):
+        course_id = self.db.get_course_id_value(course_name)
+        if not course_id:
+            return None
+        return self.db.add_timetable_entry(course_id, day, period, subject_name, teacher_name, classroom)
 
-def display_timetable(df):
-    """Print timetable nicely in terminal."""
-    if df is None or df.empty:
-        print("No timetable to display.")
-        return
+    def update_timetable_entry(self, course_name: str, day: str, period: int, subject_name: str, teacher_name: str, classroom: str):
+        course_id = self.db.get_course_id_value(course_name)
+        if not course_id:
+            return None
+        return self.db.update_timetable_entry(course_id, day, period, subject_name, teacher_name, classroom)
 
-    print("\nTimetable:")
-    print("-" * 50)
-    for idx, row in df.iterrows():
-        print(f"Period {row['period']}: {row['subject']} - {row['teacher']} (Class: {row['classroom']})")
-    print("-" * 50)
+    def delete_timetable_entry(self, course_name: str, day: str, period: int):
+        course_id = self.db.get_course_id_value(course_name)
+        if not course_id:
+            return None
+        return self.db.delete_timetable_entry(course_id, day, period)
+
+    def get_all_courses(self):
+        return self.db.get_courses()
+
+    def get_all_timetables(self):
+        return self.db.get_all_timetables()
